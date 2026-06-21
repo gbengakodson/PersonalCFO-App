@@ -202,9 +202,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     // ---- offline business analysis (tell me about ...) ----
-    if (text.startsWith('tell me about ') || text.startsWith('analyze offline business ')) {
+    if (text.startsWith('tell me about ')) {
       try {
-        String idea = text.replaceFirst('tell me about ', '').replaceFirst('analyze offline business ', '').trim();
+        String idea = text.replaceFirst('tell me about ', '').trim();
         var response = await http.post(
           Uri.parse('$_apiBase/business/offline'),
           headers: {'Content-Type': 'application/json'},
