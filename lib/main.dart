@@ -31,6 +31,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _speech = stt.SpeechToText();
+    _checkRemindersAndNudges();
   }
 
   bool _containsDigit(String text) => RegExp(r'\d').hasMatch(text);
@@ -82,6 +83,38 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _checkRemindersAndNudges() async {
+    try {
+      // Check scheduled cash reminder
+      var remResp = await http.get(Uri.parse('$_apiBase/reminders/check'));
+      if (remResp.statusCode == 200) {
+        var remData = jsonDecode(remResp.body);
+        if (remData['reminder'] != null) {
+          setState(() => _messages.add({
+                'role': 'cfo',
+                'content': remData['reminder']
+              }));
+        }
+      }
+
+      // Check daily nudge (only show if not already shown today)
+      var nudgeResp = await http.get(Uri.parse('$_apiBase/nudge'));
+      if (nudgeResp.statusCode == 200) {
+        var nudgeData = jsonDecode(nudgeResp.body);
+        if (nudgeData['nudges'] != null && nudgeData['nudges'].isNotEmpty) {
+          for (var n in nudgeData['nudges']) {
+            setState(() => _messages.add({
+                  'role': 'cfo',
+                  'content': n
+                }));
+          }
+        }
+      }
+    } catch (e) {
+      // ignore if not available
+    }
+  }
+
   void _sendMessage(String text) async {
     if (text.isEmpty) return;
 
@@ -109,6 +142,36 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() => _messages.add({
               'role': 'cfo',
               'content': 'Could not reach CFO. Please try again.'
+            }));
+      }
+      _controller.clear();
+      return;
+    }
+
+    // ---- correction / change ----
+    if (text.startsWith('change ') || text.startsWith('correct ') || text.startsWith('that\'s wrong ')) {
+      try {
+        var response = await http.post(
+          Uri.parse('$_apiBase/command'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'text': text}),
+        ).timeout(Duration(seconds: 60));
+        if (response.statusCode == 200) {
+          var data = jsonDecode(response.body);
+          setState(() => _messages.add({
+                'role': 'cfo',
+                'content': data['message'] ?? 'Correction applied.'
+              }));
+        } else {
+          setState(() => _messages.add({
+                'role': 'cfo',
+                'content': 'I couldn’t apply that correction.'
+              }));
+        }
+      } catch (e) {
+        setState(() => _messages.add({
+              'role': 'cfo',
+              'content': 'Still waking up… please try again.'
             }));
       }
       _controller.clear();
@@ -276,6 +339,13 @@ class _ChatScreenState extends State<ChatScreen> {
               'role': 'cfo',
               'content': data['message'] ?? 'Transaction recorded.'
             }));
+        // Show micro‑lesson tip if available
+        if (data['tip'] != null) {
+          setState(() => _messages.add({
+                'role': 'cfo',
+                'content': data['tip']
+              }));
+        }
       } else {
         // Fallback to summary
         response = await http.post(
